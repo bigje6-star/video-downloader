@@ -20,17 +20,22 @@ DOWNLOAD_DIR = os.path.expanduser("~/Downloads")
 # 支持开发环境和打包后环境
 if getattr(sys, 'frozen', False):
     # 打包后的环境
-    BASE_DIR = Path(sys.executable).parent
-
-    # macOS .app bundle 中，Resources 目录与 MacOS 目录同级
     if sys.platform == 'darwin':
+        # macOS .app bundle: Contents/MacOS 是执行文件所在位置
+        BASE_DIR = Path(sys.executable).parent
         FRONTEND_DIR = BASE_DIR.parent / 'Resources' / 'frontend' / 'dist'
+    elif sys.platform == 'win32':
+        # Windows: 可执行文件所在目录
+        BASE_DIR = Path(sys.executable).parent
+        FRONTEND_DIR = BASE_DIR / 'frontend' / 'dist'
     else:
-        # Windows/Linux 使用 _MEIPASS
+        # Linux/其他：使用 _MEIPASS
         if hasattr(sys, '_MEIPASS'):
-            FRONTEND_DIR = Path(sys._MEIPASS) / 'frontend' / 'dist'
-        else:
+            BASE_DIR = Path(sys._MEIPASS)
             FRONTEND_DIR = BASE_DIR / 'frontend' / 'dist'
+        else:
+            BASE_DIR = Path(__file__).parent
+            FRONTEND_DIR = BASE_DIR.parent / "frontend" / "dist"
 else:
     # 开发环境
     BASE_DIR = Path(__file__).parent

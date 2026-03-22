@@ -89,10 +89,18 @@ jobs:
         run: |
           cd backend
 
-          # 使用命令行方式构建 - onefile 模式
+          # 移动 FFmpeg 到 backend 目录以便 PyInstaller 打包
+          if (Test-Path ffmpeg.exe) {
+            Copy-Item -Path ffmpeg.exe -Destination .\
+            Copy-Item -Path ffprobe.exe -Destination .\
+          }
+
+          # 使用 onedir 模式创建应用程序目录
           pyinstaller --name VideoDownloader `
-            --onefile `
+            --onedir `
             --add-data "../frontend/dist;frontend/dist" `
+            --add-binary "ffmpeg.exe;." `
+            --add-binary "ffprobe.exe;." `
             --hidden-import uvicorn `
             --hidden-import uvicorn.logging `
             --hidden-import uvicorn.loops.auto `
@@ -104,6 +112,7 @@ jobs:
             --hidden-import fastapi.middleware.cors `
             --hidden-import fastapi.websockets `
             --hidden-import yt_dlp `
+            --hidden-import yt_dlp.extractor `
             --hidden-import websockets `
             --hidden-import pydantic `
             --console `
@@ -113,23 +122,20 @@ jobs:
             --workpath ./build `
             main.py
 
-          # 复制 FFmpeg
-          if (Test-Path ffmpeg.exe) {
-            Copy-Item -Path ffmpeg.exe -Destination dist\
-            Copy-Item -Path ffprobe.exe -Destination dist\
-          }
-
-          # 复制 FFmpeg
-          if (Test-Path ffmpeg.exe) {
-            Copy-Item -Path ffmpeg.exe -Destination dist\
-            Copy-Item -Path ffprobe.exe -Destination dist\
-          }
+          # 验证输出
+          Write-Host "Files in dist:"
+          Get-ChildItem -Recurse dist\
 
       - name: Create installer folder (Windows)
         if: runner.os == 'Windows'
         run: |
           New-Item -ItemType Directory -Force -Path installer\windows
-          Copy-Item -Path backend\dist\* -Destination installer\windows\ -Recurse
+          # 复制整个 VideoExporter 目录（onedir 模式输出）
+          Copy-Item -Path backend\dist\VideoDownloader\* -Destination installer\windows\ -Recurse
+
+          # 列出文件用于调试
+          Write-Host "Files in installer/windows:"
+          Get-ChildItem -Recurse installer\windows\
 
       - name: Install Inno Setup
         if: runner.os == 'Windows'
@@ -194,9 +200,9 @@ jobs:
         run: |
           cd backend
 
-          # 使用命令行方式构建 - onefile 模式
+          # 使用 onedir 模式创建应用程序目录
           pyinstaller --name VideoDownloader \
-            --onefile \
+            --onedir \
             --add-data "../frontend/dist:frontend/dist" \
             --hidden-import uvicorn \
             --hidden-import uvicorn.logging \
@@ -209,6 +215,7 @@ jobs:
             --hidden-import fastapi.middleware.cors \
             --hidden-import fastapi.websockets \
             --hidden-import yt_dlp \
+            --hidden-import yt_dlp.extractor \
             --hidden-import websockets \
             --hidden-import pydantic \
             --console \
@@ -218,24 +225,32 @@ jobs:
             --workpath ./build \
             main.py
 
+          # 验证输出
+          echo "Files in dist:"
+          ls -la dist/
+
       - name: Create macOS App Bundle
         if: runner.os == 'macOS'
         run: |
-          mkdir -p output/macos/${{ env.APP_NAME }}.app/Contents/MacOS
-          mkdir -p output/macos/${{ env.APP_NAME }}.app/Contents/Resources
+          # PyInstaller onedir 模式已经创建了正确的目录结构
+          # VideoDownloader.app 已经在 backend/dist/VideoDownloader.app/
 
-          # 复制 onefile 可执行文件
-          cp backend/dist/${{ env.APP_NAME }} output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/
-          cp $(which ffmpeg) output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/
-          cp $(which ffprobe) output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/
+          # 移动到输出目录
+          mkdir -p output/macos
+          cp -R backend/dist/VideoDownloader.app output/macos/
 
-          cat > output/macos/${{ env.APP_NAME }}.app/Contents/Info.plist << 'EOF'
+          # 复制 FFmpeg 到 app bundle 的 MacOS 目录
+          cp $(which ffmpeg) output/macos/VideoDownloader.app/Contents/MacOS/ffmpeg
+          cp $(which ffprobe) output/macos/VideoDownloader.app/Contents/MacOS/ffprobe
+
+          # 更新 Info.plist 确保正确配置
+          cat > output/macos/VideoDownloader.app/Contents/Info.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
               <key>CFBundleExecutable</key>
-              <string>launch.sh</string>
+              <string>VideoDownloader</string>
               <key>CFBundleIconFile</key>
               <string>AppIcon.icns</string>
               <key>CFBundleIdentifier</key>
@@ -256,14 +271,6 @@ jobs:
           </plist>
           EOF
 
-          cat > output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/launch.sh << 'LAUNCHER'
-          #!/bin/bash
-          APP_DIR="$(cd "$(dirname "$0")" && pwd)"
-          export DYLD_LIBRARY_PATH="$APP_DIR:$DYLD_LIBRARY_PATH"
-          exec "$APP_DIR/${{ env.APP_NAME }}" "$@"
-          LAUNCHER
-          chmod +x output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/launch.sh
-
       - name: Install create-dmg
         if: runner.os == 'macOS'
         run: brew install create-dmg
@@ -282,10 +289,10 @@ jobs:
             --window-size 600 400 \
             --icon-size 100 \
             --app-drop-link 450 200 \
-            --icon "${{ env.APP_NAME }}.app" 150 200 \
-            --hide-extension "${{ env.APP_NAME }}.app" \
+            --icon "VideoDownloader.app" 150 200 \
+            --hide-extension "VideoDownloader.app" \
             output/dmg/${{ env.APP_NAME }}-${version}-macos-universal.dmg \
-            output/macos/${{ env.APP_NAME }}.app
+            output/macos/VideoDownloader.app
 
           # 移除隔离属性
           xattr -rd com.apple.quarantine output/dmg/*.dmg 2>/dev/null || true
@@ -298,7 +305,7 @@ jobs:
           [ -z "$version" ] && version="1.0.0"
 
           mkdir -p output/zip
-          ditto -c -k --sequesterRsrc --keepParent output/macos/${{ env.APP_NAME }}.app output/zip/${{ env.APP_NAME }}-${version}-macos-universal.zip
+          ditto -c -k --sequesterRsrc --keepParent output/macos/VideoDownloader.app output/zip/${{ env.APP_NAME }}-${version}-macos-universal.zip
           # 移除隔离属性
           xattr -rd com.apple.quarantine output/zip/*.zip 2>/dev/null || true
 
@@ -320,9 +327,9 @@ jobs:
         run: |
           cd backend
 
-          # 使用命令行方式构建 - onefile 模式
+          # 使用 onedir 模式创建应用程序目录
           pyinstaller --name VideoDownloader \
-            --onefile \
+            --onedir \
             --add-data "../frontend/dist:frontend/dist" \
             --hidden-import uvicorn \
             --hidden-import uvicorn.logging \
@@ -335,6 +342,7 @@ jobs:
             --hidden-import fastapi.middleware.cors \
             --hidden-import fastapi.websockets \
             --hidden-import yt_dlp \
+            --hidden-import yt_dlp.extractor \
             --hidden-import websockets \
             --hidden-import pydantic \
             --console \
@@ -344,6 +352,10 @@ jobs:
             --workpath ./build \
             main.py
 
+          # 验证输出
+          echo "Files in dist:"
+          ls -la dist/
+
       - name: Package Linux distribution (tar.gz)
         if: runner.os == 'Linux'
         run: |
@@ -352,7 +364,7 @@ jobs:
           [ -z "$version" ] && version="1.0.0"
 
           mkdir -p output/linux
-          cp -r backend/dist/* output/linux/
+          cp -r backend/dist/VideoDownloader/* output/linux/
           cp $(which ffmpeg) output/linux/
           cp $(which ffprobe) output/linux/
 
@@ -390,8 +402,8 @@ jobs:
           mkdir -p ${{ env.APPIMAGEDIR }}/usr/share/applications
           mkdir -p ${{ env.APPIMAGEDIR }}/usr/share/icons/hicolor/256x256/apps
 
-          # 复制主程序
-          cp backend/dist/${{ env.APP_NAME }} ${{ env.APPIMAGEDIR }}/usr/bin/
+          # 复制主程序 (onedir 模式输出)
+          cp -r backend/dist/VideoDownloader/* ${{ env.APPIMAGEDIR }}/usr/bin/
           cp $(which ffmpeg) ${{ env.APPIMAGEDIR }}/usr/lib/
           cp $(which ffprobe) ${{ env.APPIMAGEDIR }}/usr/lib/
 
@@ -401,7 +413,7 @@ jobs:
           HERE="$(dirname "$(readlink -f "$0")")"
           export PATH="$HERE/usr/bin:$HERE/usr/lib:$PATH"
           export LD_LIBRARY_PATH="$HERE/usr/lib:$LD_LIBRARY_PATH"
-          exec "$HERE/usr/bin/${{ env.APP_NAME }}" "$@"
+          exec "$HERE/usr/bin/VideoDownloader" "$@"
           EOF
           chmod +x ${{ env.APPIMAGEDIR }}/AppRun
 
