@@ -1,19 +1,23 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
 PyInstaller 配置文件 - 视频下载器跨平台打包
+PyInstaller 6.x compatible
 """
 
 import sys
 import os
 from pathlib import Path
 
-# PyInstaller 6.x 兼容性导入
+# PyInstaller 6.x 使用新的导入方式
+# Analysis 在 PyInstaller.building.build_main 中
+# PYZ 在 PyInstaller.building.pyz 中
+# EXE 在 PyInstaller.building.api 中
 try:
-    # PyInstaller 6.x
-    from PyInstaller.building.api import Analysis
+    # PyInstaller 6.x+
+    from PyInstaller.building.build_main import Analysis
     from PyInstaller.building.pyz import PYZ
     from PyInstaller.building.api import EXE
-    from PyInstaller.building.datastruct import TOC
+    from PyInstaller.building.datastruct import TOC, Target
 except ImportError:
     # PyInstaller 5.x 及更早版本
     from PyInstaller.building.api import Analysis, PYZ, EXE
