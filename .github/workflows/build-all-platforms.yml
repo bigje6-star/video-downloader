@@ -89,8 +89,9 @@ jobs:
         run: |
           cd backend
 
-          # 使用命令行方式构建，避免 spec 文件兼容性问题
+          # 使用命令行方式构建 - onefile 模式
           pyinstaller --name VideoDownloader `
+            --onefile `
             --add-data "../frontend/dist;frontend/dist" `
             --hidden-import uvicorn `
             --hidden-import uvicorn.logging `
@@ -193,8 +194,9 @@ jobs:
         run: |
           cd backend
 
-          # 使用命令行方式构建
+          # 使用命令行方式构建 - onefile 模式
           pyinstaller --name VideoDownloader \
+            --onefile \
             --add-data "../frontend/dist:frontend/dist" \
             --hidden-import uvicorn \
             --hidden-import uvicorn.logging \
@@ -222,6 +224,7 @@ jobs:
           mkdir -p output/macos/${{ env.APP_NAME }}.app/Contents/MacOS
           mkdir -p output/macos/${{ env.APP_NAME }}.app/Contents/Resources
 
+          # 复制 onefile 可执行文件
           cp backend/dist/${{ env.APP_NAME }} output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/
           cp $(which ffmpeg) output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/
           cp $(which ffprobe) output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/
@@ -317,8 +320,9 @@ jobs:
         run: |
           cd backend
 
-          # 使用命令行方式构建
+          # 使用命令行方式构建 - onefile 模式
           pyinstaller --name VideoDownloader \
+            --onefile \
             --add-data "../frontend/dist:frontend/dist" \
             --hidden-import uvicorn \
             --hidden-import uvicorn.logging \
