@@ -7,18 +7,10 @@ import sys
 import os
 from pathlib import Path
 
-# 获取项目根目录 - 使用绝对路径
-# PyInstaller 从 backend 目录运行，spec 文件在 packaging/
-# 所以需要从 packaging 向上两级到项目根，然后进入 backend
-spec_dir = Path(__file__).resolve().parent
-project_root = spec_dir.parent
-backend_dir = project_root / 'backend'
-
-# 验证路径
-if not backend_dir.exists():
-    # Fallback: 尝试当前工作目录的父目录
-    project_root = Path.cwd().parent
-    backend_dir = Path.cwd()
+# 直接使用相对于当前工作目录的路径
+# 当前工作目录应该是 backend，所以项目根是 ..
+project_root = Path.cwd().parent
+backend_dir = Path.cwd()
 
 block_cipher = None
 
@@ -84,14 +76,14 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=sys.platform == 'win32',  # 只在 Windows 上使用 UPX
+    upx=sys.platform == 'win32',
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,  # 显示控制台以便调试（生产环境可改为 False）
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # 可选：添加图标文件路径
+    icon=None,
 )
