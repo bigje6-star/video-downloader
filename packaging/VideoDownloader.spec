@@ -17,7 +17,7 @@ except NameError:
 block_cipher = None
 
 a = Analysis(
-    ['main.py'],
+    [str(project_root / 'backend' / 'main.py')],
     pathex=[str(project_root / 'backend')],
     binaries=[],
     datas=[
