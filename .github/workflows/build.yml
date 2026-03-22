@@ -3,30 +3,20 @@ name: Build Installers
 on:
   push:
     branches: [ main ]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [ubuntu-latest]
         include:
-          - os: macos-latest
-            platform: macos
-            artifact_name: VideoDownloader-macos
-          - os: windows-latest
-            platform: windows
-            artifact_name: VideoDownloader-windows
           - os: ubuntu-latest
             platform: linux
             artifact_name: VideoDownloader-linux
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 30
 
     steps:
     - name: Checkout code
@@ -41,112 +31,33 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
 
-    - name: Check FFmpeg
-      shell: bash
-      run: |
-        if command -v ffmpeg &> /dev/null; then
-          echo "FFmpeg already installed:"
-          ffmpeg -version | head -n 1
-        else
-          echo "FFmpeg not found, will install..."
-          exit 1
-        fi
+    - name: Install FFmpeg
+      run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-    - name: Build all
-      shell: bash
+    - name: Build
       run: |
-        echo "=== Building frontend ==="
         cd frontend
-        npm ci --silent
+        npm ci
         npm run build
 
-        echo "=== Installing Python dependencies ==="
         cd ../backend
         python -m venv venv
+        source venv/bin/activate
+        pip install -r requirements.txt
+        pip install pyinstaller
 
-        if [ "$RUNNER_OS" == "Windows" ]; then
-          source venv/Scripts/activate
-        else
-          source venv/bin/activate
-        fi
+        pyinstaller packaging/VideoDownloader.spec --clean --noconfirm
 
-        pip install --upgrade pip --quiet
-        pip install -r requirements.txt --quiet
-        pip install pyinstaller --quiet
+        ls -lah dist/
 
-        echo "=== Building with PyInstaller ==="
-        if [ "$RUNNER_OS" == "Windows" ]; then
-          pyinstaller packaging/VideoDownloader.spec --clean --noconfirm --log-level=WARN
-        else
-          pyinstaller packaging/VideoDownloader.spec --clean --noconfirm --log-level=WARN
-        fi
-
-        echo "=== Verifying build ==="
-        cd dist
-        ls -lah
-
-    - name: Copy FFmpeg
-      shell: bash
-      run: |
-        if [ "$RUNNER_OS" == "Windows" ]; then
-          powershell -Command "Copy-Item (Get-Command ffmpeg).Source backend\dist\"
-          powershell -Command "Copy-Item (Get-Command ffprobe).Source backend\dist\"
-        else
-          cp "$(which ffmpeg)" backend/dist/
-          cp "$(which ffprobe)" backend/dist/
-        fi
-
-    - name: Create archive (Unix)
-      if: runner.os != 'Windows'
+    - name: Create archive
       run: |
         cd backend/dist
-        tar -czf ../VideoDownloader-${{ matrix.platform }}.tar.gz .
+        tar -czf ../VideoDownloader-linux.tar.gz .
 
-    - name: Create archive (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        Compress-Archive -Path backend\dist\* -DestinationPath backend\VideoDownloader-windows.zip
-
-    - name: Upload artifact (Unix)
-      if: runner.os != 'Windows'
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: VideoDownloader-${{ matrix.platform }}
-        path: backend/VideoDownloader-${{ matrix.platform }}.tar.gz
-        retention-days: 30
-
-    - name: Upload artifact (Windows)
-      if: runner.os == 'Windows'
-      uses: actions/upload-artifact@v4
-      with:
-        name: VideoDownloader-windows
-        path: backend/VideoDownloader-windows.zip
-        retention-days: 30
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: ./artifacts
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          ./artifacts/VideoDownloader-macos/VideoDownloader-macos.tar.gz
-          ./artifacts/VideoDownloader-linux/VideoDownloader-linux.tar.gz
-          ./artifacts/VideoDownloader-windows/VideoDownloader-windows.zip
-        generate_release_notes: true
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: VideoDownloader-linux
+        path: backend/VideoDownloader-linux.tar.gz
