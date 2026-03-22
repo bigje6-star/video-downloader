@@ -6,6 +6,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  packages: read
+
 env:
   APP_NAME: VideoDownloader
   VERSION: ${{ github.ref_name }}
