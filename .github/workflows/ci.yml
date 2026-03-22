@@ -47,7 +47,7 @@ jobs:
         python -m pytest tests/ || echo "No tests yet"
 
     - name: Upload frontend artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: frontend-dist
         path: frontend/dist/
