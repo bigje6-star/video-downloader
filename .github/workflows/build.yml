@@ -26,7 +26,7 @@ jobs:
             artifact_name: VideoDownloader-linux
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
+    timeout-minutes: 60
 
     steps:
     - name: Checkout code
@@ -44,29 +44,23 @@ jobs:
         cache: 'npm'
         cache-dependency-path: frontend/package-lock.json
 
-    - name: Install FFmpeg (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get install -y ffmpeg
-
-    - name: Install FFmpeg (macOS)
-      if: matrix.os == 'macos-latest'
-      run: brew install ffmpeg
-
-    - name: Install FFmpeg (Windows)
-      if: matrix.os == 'windows-latest'
-      shell: pwsh
+    - name: Check FFmpeg
+      shell: bash
       run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-        iwr -useb https://community.chocolatey.org/install.ps1 | iex
-        choco install ffmpeg -y
+        if command -v ffmpeg &> /dev/null; then
+          echo "FFmpeg already installed:"
+          ffmpeg -version | head -n 1
+        else
+          echo "FFmpeg not found, will install..."
+          exit 1
+        fi
 
-    - name: Build and Install
+    - name: Build all
       shell: bash
       run: |
         echo "=== Building frontend ==="
         cd frontend
-        npm ci
+        npm ci --silent
         npm run build
 
         echo "=== Installing Python dependencies ==="
@@ -79,65 +73,33 @@ jobs:
           source venv/bin/activate
         fi
 
-        pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
+        pip install --upgrade pip --quiet
+        pip install -r requirements.txt --quiet
+        pip install pyinstaller --quiet
 
-    - name: Build with PyInstaller (Unix)
-      if: runner.os != 'Windows'
-      shell: bash
-      run: |
-        cd backend
-        source venv/bin/activate
-        pyinstaller packaging/VideoDownloader.spec --clean --noconfirm
-
-    - name: Build with PyInstaller (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        cd backend
-        .\venv\Scripts\Activate.ps1
-        pyinstaller packaging\VideoDownloader.spec --clean --noconfirm
-
-    - name: Verify build
-      shell: bash
-      run: |
-        cd backend/dist
-        echo "Contents:"
-        ls -la
-
+        echo "=== Building with PyInstaller ==="
         if [ "$RUNNER_OS" == "Windows" ]; then
-          if [ -f "VideoDownloader.exe" ]; then
-            echo "Build successful!"
-          else
-            echo "Build failed - no exe"
-            exit 1
-          fi
+          pyinstaller packaging/VideoDownloader.spec --clean --noconfirm --log-level=WARN
         else
-          if [ -f "VideoDownloader" ]; then
-            echo "Build successful!"
-          else
-            echo "Build failed - no binary"
-            exit 1
-          fi
+          pyinstaller packaging/VideoDownloader.spec --clean --noconfirm --log-level=WARN
         fi
 
-    - name: Copy FFmpeg (Unix)
-      if: runner.os != 'Windows'
-      run: |
-        cp "$(which ffmpeg)" backend/dist/
-        cp "$(which ffprobe)" backend/dist/
+        echo "=== Verifying build ==="
+        cd dist
+        ls -lah
 
-    - name: Copy FFmpeg (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
+    - name: Copy FFmpeg
+      shell: bash
       run: |
-        $ffmpeg = (Get-Command ffmpeg).Source
-        $ffprobe = (Get-Command ffprobe).Source
-        Copy-Item $ffmpeg backend\dist\
-        Copy-Item $ffprobe backend\dist\
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          powershell -Command "Copy-Item (Get-Command ffmpeg).Source backend\dist\"
+          powershell -Command "Copy-Item (Get-Command ffprobe).Source backend\dist\"
+        else
+          cp "$(which ffmpeg)" backend/dist/
+          cp "$(which ffprobe)" backend/dist/
+        fi
 
-    - name: Create archive (macOS/Linux)
+    - name: Create archive (Unix)
       if: runner.os != 'Windows'
       run: |
         cd backend/dist
@@ -147,8 +109,7 @@ jobs:
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        cd backend\dist
-        7z a -tzip ..\VideoDownloader-windows.zip *
+        Compress-Archive -Path backend\dist\* -DestinationPath backend\VideoDownloader-windows.zip
 
     - name: Upload artifact (Unix)
       if: runner.os != 'Windows'
