@@ -229,12 +229,29 @@ jobs:
             output/dmg/${{ env.APP_NAME }}-${version}-macos-universal.dmg \
             output/macos/${{ env.APP_NAME }}.app
 
+          # 移除隔离属性
+          xattr -rd com.apple.quarantine output/dmg/*.dmg 2>/dev/null || true
+
+      - name: Create ZIP (alternative for macOS)
+        if: runner.os == 'macOS'
+        run: |
+          version="${{ env.VERSION }}"
+          version="${version#v}"
+          [ -z "$version" ] && version="1.0.0"
+
+          mkdir -p output/zip
+          ditto -c -k --sequesterRsrc --keepParent output/macos/${{ env.APP_NAME }}.app output/zip/${{ env.APP_NAME }}-${version}-macos-universal.zip
+          # 移除隔离属性
+          xattr -rd com.apple.quarantine output/zip/*.zip 2>/dev/null || true
+
       - name: Upload macOS DMG
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: output/dmg/*.dmg
+          path: |
+            output/dmg/*.dmg
+            output/zip/*.zip
           retention-days: 30
 
       # =======================================================================
