@@ -1,0 +1,308 @@
+name: Build Windows & macOS Installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  APP_NAME: VideoDownloader
+  VERSION: ${{ github.ref_name }}
+
+jobs:
+  # ===========================================================================
+  # Windows - Inno Setup Installer
+  # ===========================================================================
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install FFmpeg
+        run: |
+          curl -L -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath .
+          Move-Item -Path ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe -Destination backend/
+          Move-Item -Path ffmpeg-master-latest-win64-gpl\bin\ffprobe.exe -Destination backend/
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Build with PyInstaller
+        run: |
+          cd backend
+          pyinstaller ../packaging/VideoDownloader.spec --clean --noconfirm
+
+      - name: Copy FFmpeg to dist
+        run: |
+          Copy-Item -Path backend\ffmpeg.exe -Destination backend\dist\
+          Copy-Item -Path backend\ffprobe.exe -Destination backend\dist\
+
+      - name: Create distribution folder
+        run: |
+          New-Item -ItemType Directory -Force -Path installer\windows
+          Copy-Item -Path backend\dist\* -Destination installer\windows\ -Recurse
+          Copy-Item -Path packaging\installer-windows.iss -Destination installer\windows\ -ErrorAction SilentlyContinue
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y
+
+      - name: Build Inno Setup Installer
+        run: |
+          $version = "${{ env.VERSION }}" -replace '^v', ''
+          if ($version -eq "") { $version = "1.0.0" }
+
+          cd installer\windows
+
+          # Create ISS file if not exists
+          $issContent = @"
+          [Setup]
+          AppName=${{ env.APP_NAME }}
+          AppVersion=$version
+          AppPublisher=Video Downloader
+          DefaultDirName={pf}\${{ env.APP_NAME }}
+          DefaultGroupName=${{ env.APP_NAME }}
+          OutputDir=..\..\output\windows
+          OutputBaseFilename=${{ env.APP_NAME }}-Setup-$version-win64
+          SetupIconFile=..\..\packaging\icon.ico
+          UninstallDisplayIcon={app}\${{ env.APP_NAME }}.exe
+          Compression=lzma2
+          SolidCompression=yes
+          PrivilegesRequired=admin
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+
+          [Languages]
+          Name: "english"; MessagesFile: "compiler:Default.isl"
+          Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+
+          [Files]
+          Source: "..\..\output\windows\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{group}\${{ env.APP_NAME }}"; Filename: "{app}\${{ env.APP_NAME }}.exe"
+          Name: "{commondesktop}\${{ env.APP_NAME }}"; Filename: "{app}\${{ env.APP_NAME }}.exe"
+          Name: "{autoprograms}\${{ env.APP_NAME }}"; Filename: "{app}\${{ env.APP_NAME }}.exe"
+
+          [Run]
+          Filename: "{app}\${{ env.APP_NAME }}.exe"; Description: "{cm:LaunchProgram,${{ env.APP_NAME }}}"; Flags: nowait postinstall skipifsilent
+          "@
+
+          Set-Content -Path "VideoDownloader.iss" -Value $issContent -Encoding UTF8
+
+          iscc VideoDownloader.iss
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: output/windows/*.exe
+          retention-days: 30
+
+  # ===========================================================================
+  # macOS - DMG Installer
+  # ===========================================================================
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install FFmpeg
+        run: |
+          brew install ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Build with PyInstaller
+        run: |
+          cd backend
+          pyinstaller ../packaging/VideoDownloader.spec --clean --noconfirm
+
+      - name: Create macOS App Bundle
+        run: |
+          # Create .app bundle structure
+          mkdir -p output/macos/${{ env.APP_NAME }}.app/Contents/MacOS
+          mkdir -p output/macos/${{ env.APP_NAME }}.app/Contents/Resources
+
+          # Copy the executable
+          cp backend/dist/${{ env.APP_NAME }} output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/
+
+          # Copy ffmpeg binaries
+          cp $(which ffmpeg) output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/
+          cp $(which ffprobe) output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/
+
+          # Create Info.plist
+          cat > output/macos/${{ env.APP_NAME }}.app/Contents/Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>${{ env.APP_NAME }}</string>
+              <key>CFBundleIconFile</key>
+              <string>AppIcon.icns</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.videodownloader.app</string>
+              <key>CFBundleName</key>
+              <string>${{ env.APP_NAME }}</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${{ env.VERSION }}</string>
+              <key>CFBundleVersion</key>
+              <string>${{ env.VERSION }}</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>10.15</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+
+          # Create launcher script that sets up dylib paths
+          cat > output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/launch.sh << 'LAUNCHER'
+          #!/bin/bash
+          APP_DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$APP_DIR:$DYLD_LIBRARY_PATH"
+          exec "$APP_DIR/${{ env.APP_NAME }}" "$@"
+          LAUNCHER
+          chmod +x output/macos/${{ env.APP_NAME }}.app/Contents/MacOS/launch.sh
+
+          # Update Info.plist to use launcher
+          sed -i '' 's/<string>${{ env.APP_NAME }}<\/string>/<string>launch.sh<\/string>/g' output/macos/${{ env.APP_NAME }}.app/Contents/Info.plist
+
+      - name: Install create-dmg
+        run: |
+          brew install create-dmg
+
+      - name: Create DMG
+        run: |
+          version="${{ env.VERSION }}"
+          version="${version#v}"  # Remove 'v' prefix if present
+          if [ -z "$version" ]; then version="1.0.0"; fi
+
+          mkdir -p output/dmg
+          create-dmg \
+            --volname "${{ env.APP_NAME }}" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --app-drop-link 450 200 \
+            --icon "${{ env.APP_NAME }}.app" 150 200 \
+            --hide-extension "${{ env.APP_NAME }}.app" \
+            --background packaging/dmg-background.png \
+            output/dmg/${{ env.APP_NAME }}-${version}-macos-universal.dmg \
+            output/macos/${{ env.APP_NAME }}.app || {
+              # Fallback without background image
+              create-dmg \
+                --volname "${{ env.APP_NAME }}" \
+                --window-pos 200 120 \
+                --window-size 600 400 \
+                --icon-size 100 \
+                --app-drop-link 450 200 \
+                --icon "${{ env.APP_NAME }}.app" 150 200 \
+                --hide-extension "${{ env.APP_NAME }}.app" \
+                output/dmg/${{ env.APP_NAME }}-${version}-macos-universal.dmg \
+                output/macos/${{ env.APP_NAME }}.app
+            }
+
+      - name: Notarize DMG (optional)
+        if: ${{ env.MACOS_CERTIFICATE != '' }}
+        run: |
+          echo "Notarization would happen here if certificates were configured"
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: output/dmg/*.dmg
+          retention-days: 30
+
+  # ===========================================================================
+  # Create GitHub Release
+  # ===========================================================================
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: ./artifacts
+
+      - name: Download macOS installer
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-installer
+          path: ./artifacts
+
+      - name: List artifacts
+        run: ls -la ./artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./artifacts/*.exe
+            ./artifacts/*.dmg
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
