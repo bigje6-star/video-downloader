@@ -9,19 +9,8 @@ on:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
-        include:
-          - os: macos-latest
-            platform: macos
-          - os: windows-latest
-            platform: windows
-          - os: ubuntu-latest
-            platform: linux
-
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout code
@@ -37,24 +26,7 @@ jobs:
       with:
         node-version: '18'
 
-    - name: Install FFmpeg (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      run: sudo apt-get install -y ffmpeg
-
-    - name: Install FFmpeg (macOS)
-      if: matrix.os == 'macos-latest'
-      run: brew install ffmpeg
-
-    - name: Install FFmpeg (Windows)
-      if: matrix.os == 'windows-latest'
-      shell: pwsh
-      run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        iwr -useb https://community.chocolatey.org/install.ps1 | iex
-        choco install ffmpeg -y
-
     - name: Build
-      shell: bash
       run: |
         cd frontend
         npm ci
@@ -62,13 +34,7 @@ jobs:
 
         cd ../backend
         python -m venv venv
-
-        if [ "$RUNNER_OS" == "Windows" ]; then
-          source venv/Scripts/activate
-        else
-          source venv/bin/activate
-        fi
-
+        source venv/bin/activate
         pip install -r requirements.txt
         pip install pyinstaller
 
@@ -76,45 +42,16 @@ jobs:
 
         ls -lah dist/
 
-    - name: Copy FFmpeg (Unix)
-      if: runner.os != 'Windows'
-      run: |
-        cp "$(which ffmpeg)" backend/dist/
-        cp "$(which ffprobe)" backend/dist/
-
-    - name: Copy FFmpeg (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        Copy-Item (Get-Command ffmpeg).Source backend\dist\
-        Copy-Item (Get-Command ffprobe).Source backend\dist\
-
-    - name: Create archive (Unix)
-      if: runner.os != 'Windows'
+    - name: Create archive
       run: |
         cd backend/dist
-        tar -czf ../VideoDownloader-${{ matrix.platform }}.tar.gz .
+        tar -czf ../VideoDownloader-linux.tar.gz .
 
-    - name: Create archive (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        Compress-Archive -Path backend\dist\* -DestinationPath backend\VideoDownloader-windows.zip
-
-    - name: Upload artifact (Unix)
-      if: runner.os != 'Windows'
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: VideoDownloader-${{ matrix.platform }}
-        path: backend/VideoDownloader-${{ matrix.platform }}.tar.gz
-        retention-days: 30
-
-    - name: Upload artifact (Windows)
-      if: runner.os == 'Windows'
-      uses: actions/upload-artifact@v4
-      with:
-        name: VideoDownloader-windows
-        path: backend/VideoDownloader-windows.zip
+        name: VideoDownloader-linux
+        path: backend/VideoDownloader-linux.tar.gz
         retention-days: 30
 
   release:
@@ -123,18 +60,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Download all artifacts
+    - name: Download artifact
       uses: actions/download-artifact@v4
       with:
-        path: ./artifacts
+        name: VideoDownloader-linux
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          ./artifacts/VideoDownloader-macos/VideoDownloader-macos.tar.gz
-          ./artifacts/VideoDownloader-linux/VideoDownloader-linux.tar.gz
-          ./artifacts/VideoDownloader-windows/VideoDownloader-windows.zip
+        files: VideoDownloader-linux.tar.gz
         generate_release_notes: true
         draft: false
         prerelease: false
