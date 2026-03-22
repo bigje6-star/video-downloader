@@ -7,10 +7,10 @@ import sys
 import os
 from pathlib import Path
 
-# 直接使用相对于当前工作目录的路径
-# 当前工作目录应该是 backend，所以项目根是 ..
-project_root = Path.cwd().parent
-backend_dir = Path.cwd()
+# 使用脚本所在目录作为基准
+spec_dir = Path(__file__).parent
+backend_dir = spec_dir.parent / 'backend'
+project_root = spec_dir.parent
 
 block_cipher = None
 
