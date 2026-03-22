@@ -91,7 +91,6 @@ jobs:
 
           # 使用命令行方式构建，避免 spec 文件兼容性问题
           pyinstaller --name VideoDownloader `
-            --mainpath main.py `
             --add-data "../frontend/dist;frontend/dist" `
             --hidden-import uvicorn `
             --hidden-import uvicorn.logging `
@@ -110,7 +109,14 @@ jobs:
             --clean `
             --noconfirm `
             --distpath ./dist `
-            --workpath ./build
+            --workpath ./build `
+            main.py
+
+          # 复制 FFmpeg
+          if (Test-Path ffmpeg.exe) {
+            Copy-Item -Path ffmpeg.exe -Destination dist\
+            Copy-Item -Path ffprobe.exe -Destination dist\
+          }
 
           # 复制 FFmpeg
           if (Test-Path ffmpeg.exe) {
@@ -189,7 +195,6 @@ jobs:
 
           # 使用命令行方式构建
           pyinstaller --name VideoDownloader \
-            --mainpath main.py \
             --add-data "../frontend/dist:frontend/dist" \
             --hidden-import uvicorn \
             --hidden-import uvicorn.logging \
@@ -208,7 +213,8 @@ jobs:
             --clean \
             --noconfirm \
             --distpath ./dist \
-            --workpath ./build
+            --workpath ./build \
+            main.py
 
       - name: Create macOS App Bundle
         if: runner.os == 'macOS'
@@ -313,7 +319,6 @@ jobs:
 
           # 使用命令行方式构建
           pyinstaller --name VideoDownloader \
-            --mainpath main.py \
             --add-data "../frontend/dist:frontend/dist" \
             --hidden-import uvicorn \
             --hidden-import uvicorn.logging \
@@ -332,7 +337,8 @@ jobs:
             --clean \
             --noconfirm \
             --distpath ./dist \
-            --workpath ./build
+            --workpath ./build \
+            main.py
 
       - name: Package Linux distribution (tar.gz)
         if: runner.os == 'Linux'
