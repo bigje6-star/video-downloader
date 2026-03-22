@@ -19,18 +19,18 @@ DOWNLOAD_DIR = os.path.expanduser("~/Downloads")
 # 获取基础目录和前端目录
 # 支持开发环境和打包后环境
 if getattr(sys, 'frozen', False):
-    # 打包后的环境 - 使用 PyInstaller 的 _MEIPASS 临时目录
+    # 打包后的环境
     BASE_DIR = Path(sys.executable).parent
-    # 尝试多个可能的前端路径
-    if hasattr(sys, '_MEIPASS'):
-        # PyInstaller 解压后的临时目录
-        FRONTEND_DIR = Path(sys._MEIPASS) / 'frontend' / 'dist'
-    else:
-        FRONTEND_DIR = BASE_DIR / 'frontend' / 'dist'
 
-    # 如果上述路径不存在，尝试从 .app bundle 的 Resources 目录查找
-    if not os.path.exists(str(FRONTEND_DIR)):
-        FRONTEND_DIR = Path(os.path.dirname(sys.executable)) / 'Resources' / 'frontend' / 'dist'
+    # macOS .app bundle 中，Resources 目录与 MacOS 目录同级
+    if sys.platform == 'darwin':
+        FRONTEND_DIR = BASE_DIR.parent / 'Resources' / 'frontend' / 'dist'
+    else:
+        # Windows/Linux 使用 _MEIPASS
+        if hasattr(sys, '_MEIPASS'):
+            FRONTEND_DIR = Path(sys._MEIPASS) / 'frontend' / 'dist'
+        else:
+            FRONTEND_DIR = BASE_DIR / 'frontend' / 'dist'
 else:
     # 开发环境
     BASE_DIR = Path(__file__).parent

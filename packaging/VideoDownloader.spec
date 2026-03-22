@@ -17,6 +17,21 @@ else:
     project_root = spec_dir.parent
 
 backend_dir = project_root / 'backend'
+frontend_dist = project_root / 'frontend' / 'dist'
+
+block_cipher = None
+
+# macOS 下将前端文件放入 Resources 目录
+if sys.platform == 'darwin':
+    datas_path = (str(frontend_dist), 'Resources/frontend/dist')
+else:
+    datas_path = (str(frontend_dist), 'frontend/dist')
+
+a = Analysis(
+    [str(backend_dir / 'main.py')],
+    pathex=[str(backend_dir)],
+    binaries=[],
+    datas=[datas_path],
 
 block_cipher = None
 
