@@ -7,8 +7,12 @@ import sys
 import os
 from pathlib import Path
 
-# 获取项目根目录
-project_root = Path(__file__).parent.parent
+# 获取项目根目录（兼容 PyInstaller）
+try:
+    project_root = Path(__file__).resolve().parent.parent
+except NameError:
+    # PyInstaller 运行时 __file__ 可能不存在
+    project_root = Path(sys.argv[1]).resolve().parent.parent if len(sys.argv) > 1 else Path.cwd()
 
 block_cipher = None
 
@@ -74,10 +78,10 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,  # 使用 UPX 压缩减少体积
+    upx=sys.platform == 'win32',  # 只在 Windows 上使用 UPX
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # 不显示控制台窗口（GUI 模式）
+    console=True,  # 显示控制台以便调试（生产环境可改为 False）
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
