@@ -18,17 +18,15 @@ jobs:
           - os: macos-latest
             platform: macos
             artifact_name: VideoDownloader-macos
-            build_script: build_scripts/build_macos.sh
           - os: windows-latest
             platform: windows
             artifact_name: VideoDownloader-windows
-            build_script: build_scripts/build_windows.bat
           - os: ubuntu-latest
             platform: linux
             artifact_name: VideoDownloader-linux
-            build_script: build_scripts/build_linux.sh
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
 
     steps:
     - name: Checkout code
@@ -54,36 +52,32 @@ jobs:
     - name: Install FFmpeg (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
       run: |
-        sudo apt-get update
+        sudo apt-get update -qq
         sudo apt-get install -y ffmpeg
 
     - name: Install FFmpeg (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        choco install ffmpeg
+        choco install ffmpeg -y
 
     - name: Install backend dependencies
+      shell: bash
       run: |
         cd backend
         python -m venv venv
         if [ "$RUNNER_OS" == "Windows" ]; then
-          . venv/Scripts/activate
+          source venv/Scripts/activate
         else
           source venv/bin/activate
         fi
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        python -m pip install --upgrade pip --quiet
+        pip install -r requirements.txt --quiet
         pip install pyinstaller
-      shell: bash
 
-    - name: Install frontend dependencies
+    - name: Install and build frontend
       run: |
         cd frontend
         npm ci
-
-    - name: Build frontend
-      run: |
-        cd frontend
         npm run build
 
     - name: Build with PyInstaller (Unix)
@@ -91,48 +85,74 @@ jobs:
       run: |
         cd backend
         source venv/bin/activate
-        pyinstaller ../packaging/VideoDownloader.spec --clean
+        pyinstaller packaging/VideoDownloader.spec --clean --noconfirm
 
     - name: Build with PyInstaller (Windows)
       if: runner.os == 'Windows'
+      shell: cmd
       run: |
         cd backend
-        . venv\Scripts\activate
-        pyinstaller ..\packaging\VideoDownloader.spec --clean
+        venv\Scripts\activate
+        pyinstaller packaging\VideoDownloader.spec --clean --noconfirm
 
-    - name: Copy FFmpeg binaries (Unix)
-      if: runner.os != 'Windows'
+    - name: Verify build output
+      shell: bash
       run: |
         cd backend/dist
-        cp "$(which ffmpeg)" .
-        cp "$(which ffprobe)" .
+        echo "=== Build output contents ==="
+        ls -lah
+        echo "=== Verifying executable ==="
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          if [ -f "VideoDownloader.exe" ]; then
+            echo "✅ VideoDownloader.exe found"
+            ls -lh VideoDownloader.exe
+          else
+            echo "❌ VideoDownloader.exe not found"
+            exit 1
+          fi
+        else
+          if [ -f "VideoDownloader" ]; then
+            echo "✅ VideoDownloader found"
+            ls -lh VideoDownloader
+          else
+            echo "❌ VideoDownloader not found"
+            exit 1
+          fi
+        fi
 
-    - name: Copy FFmpeg binaries (Windows)
-      if: runner.os == 'Windows'
+    - name: Copy FFmpeg (Unix)
+      if: runner.os != 'Windows'
       run: |
-        copy "C:\Program Files\FFmpeg\bin\ffmpeg.exe" backend\dist\
-        copy "C:\Program Files\FFmpeg\bin\ffprobe.exe" backend\dist\
+        cp "$(which ffmpeg)" backend/dist/
+        cp "$(which ffprobe)" backend/dist/
+        echo "✅ FFmpeg copied"
+
+    - name: Copy FFmpeg (Windows)
+      if: runner.os == 'Windows'
+      shell: cmd
+      run: |
+        for %%i in ('where ffmpeg') do copy "%%i" backend\dist\ /Y
+        for %%i in ('where ffprobe') do copy "%%i" backend\dist\ /Y
+        echo FFmpeg copied
 
     - name: Create archive (macOS)
       if: matrix.os == 'macos-latest'
       run: |
         cd backend/dist
-        tar -czf ../VideoDownloader-macos.tar.gz *
-        cd ../..
+        tar -czf ../VideoDownloader-macos.tar.gz .
 
     - name: Create archive (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
         cd backend/dist
-        tar -czf ../VideoDownloader-linux.tar.gz *
-        cd ../..
+        tar -czf ../VideoDownloader-linux.tar.gz .
 
     - name: Create archive (Windows)
       if: matrix.os == 'windows-latest'
+      shell: cmd
       run: |
         cd backend\dist
-        7z a -tzip ..\VideoDownloader-windows.zip *
-        cd ..\..
+        7z a -tzip ..\VideoDownloader-windows.zip * -mx5
 
     - name: Upload macOS artifact
       if: matrix.os == 'macos-latest'
