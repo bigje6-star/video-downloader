@@ -26,7 +26,7 @@ jobs:
             artifact_name: VideoDownloader-linux
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
     - name: Checkout code
@@ -44,81 +44,80 @@ jobs:
         cache: 'npm'
         cache-dependency-path: frontend/package-lock.json
 
-    - name: Install FFmpeg (macOS)
-      if: matrix.os == 'macos-latest'
-      run: |
-        brew install ffmpeg --quiet
-      env:
-        HOMEBREW_NO_AUTO_UPDATE: 1
-        HOMEBREW_NO_INSTALL_CLEANUP: 1
-
     - name: Install FFmpeg (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update -qq
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg
+      run: sudo apt-get install -y ffmpeg
+
+    - name: Install FFmpeg (macOS)
+      if: matrix.os == 'macos-latest'
+      run: brew install ffmpeg
 
     - name: Install FFmpeg (Windows)
       if: matrix.os == 'windows-latest'
+      shell: pwsh
       run: |
-        choco install ffmpeg -y --no-progress
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+        iwr -useb https://community.chocolatey.org/install.ps1 | iex
+        choco install ffmpeg -y
 
-    - name: Install backend dependencies
+    - name: Build and Install
       shell: bash
       run: |
-        cd backend
+        echo "=== Building frontend ==="
+        cd frontend
+        npm ci
+        npm run build
+
+        echo "=== Installing Python dependencies ==="
+        cd ../backend
         python -m venv venv
+
         if [ "$RUNNER_OS" == "Windows" ]; then
           source venv/Scripts/activate
         else
           source venv/bin/activate
         fi
-        python -m pip install --upgrade pip --quiet
-        pip install -r requirements.txt --quiet
-        pip install pyinstaller
 
-    - name: Install and build frontend
-      run: |
-        cd frontend
-        npm ci --silent
-        npm run build
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
 
     - name: Build with PyInstaller (Unix)
       if: runner.os != 'Windows'
+      shell: bash
       run: |
         cd backend
         source venv/bin/activate
-        pyinstaller ../packaging/VideoDownloader.spec --clean --noconfirm --log-level=WARN
+        pyinstaller packaging/VideoDownloader.spec --clean --noconfirm
 
     - name: Build with PyInstaller (Windows)
       if: runner.os == 'Windows'
-      shell: cmd
+      shell: pwsh
       run: |
         cd backend
-        venv\Scripts\activate
-        pyinstaller ..\packaging\VideoDownloader.spec --clean --noconfirm --log-level=WARN
+        .\venv\Scripts\Activate.ps1
+        pyinstaller packaging\VideoDownloader.spec --clean --noconfirm
 
-    - name: Verify build output
+    - name: Verify build
       shell: bash
       run: |
         cd backend/dist
-        echo "=== Build output contents ==="
-        ls -lah
-        echo "=== Verifying executable ==="
+        echo "Contents:"
+        ls -la
+
         if [ "$RUNNER_OS" == "Windows" ]; then
           if [ -f "VideoDownloader.exe" ]; then
-            echo "✅ VideoDownloader.exe found"
-            ls -lh VideoDownloader.exe
+            echo "Build successful!"
           else
-            echo "❌ VideoDownloader.exe not found"
+            echo "Build failed - no exe"
             exit 1
           fi
         else
           if [ -f "VideoDownloader" ]; then
-            echo "✅ VideoDownloader found"
-            ls -lh VideoDownloader
+            echo "Build successful!"
           else
-            echo "❌ VideoDownloader not found"
+            echo "Build failed - no binary"
             exit 1
           fi
         fi
@@ -128,53 +127,39 @@ jobs:
       run: |
         cp "$(which ffmpeg)" backend/dist/
         cp "$(which ffprobe)" backend/dist/
-        echo "✅ FFmpeg copied"
 
     - name: Copy FFmpeg (Windows)
       if: runner.os == 'Windows'
-      shell: cmd
+      shell: pwsh
       run: |
-        for %%i in ('where ffmpeg.exe') do @copy "%%i" backend\dist\ /Y >nul
-        for %%i in ('where ffprobe.exe') do @copy "%%i" backend\dist\ /Y >nul
-        @echo FFmpeg copied
+        $ffmpeg = (Get-Command ffmpeg).Source
+        $ffprobe = (Get-Command ffprobe).Source
+        Copy-Item $ffmpeg backend\dist\
+        Copy-Item $ffprobe backend\dist\
 
-    - name: Create archive (macOS)
-      if: matrix.os == 'macos-latest'
+    - name: Create archive (macOS/Linux)
+      if: runner.os != 'Windows'
       run: |
         cd backend/dist
-        tar -czf ../VideoDownloader-macos.tar.gz .
-
-    - name: Create archive (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        cd backend/dist
-        tar -czf ../VideoDownloader-linux.tar.gz .
+        tar -czf ../VideoDownloader-${{ matrix.platform }}.tar.gz .
 
     - name: Create archive (Windows)
-      if: matrix.os == 'windows-latest'
-      shell: cmd
+      if: runner.os == 'Windows'
+      shell: pwsh
       run: |
         cd backend\dist
-        7z a -tzip -mx5 ..\VideoDownloader-windows.zip * -y
+        7z a -tzip ..\VideoDownloader-windows.zip *
 
-    - name: Upload macOS artifact
-      if: matrix.os == 'macos-latest'
+    - name: Upload artifact (Unix)
+      if: runner.os != 'Windows'
       uses: actions/upload-artifact@v4
       with:
-        name: VideoDownloader-macos
-        path: backend/VideoDownloader-macos.tar.gz
+        name: VideoDownloader-${{ matrix.platform }}
+        path: backend/VideoDownloader-${{ matrix.platform }}.tar.gz
         retention-days: 30
 
-    - name: Upload Linux artifact
-      if: matrix.os == 'ubuntu-latest'
-      uses: actions/upload-artifact@v4
-      with:
-        name: VideoDownloader-linux
-        path: backend/VideoDownloader-linux.tar.gz
-        retention-days: 30
-
-    - name: Upload Windows artifact
-      if: matrix.os == 'windows-latest'
+    - name: Upload artifact (Windows)
+      if: runner.os == 'Windows'
       uses: actions/upload-artifact@v4
       with:
         name: VideoDownloader-windows

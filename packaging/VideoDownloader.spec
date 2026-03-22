@@ -7,18 +7,24 @@ import sys
 import os
 from pathlib import Path
 
-# 获取项目根目录（兼容 PyInstaller）
-try:
-    project_root = Path(__file__).resolve().parent.parent
-except NameError:
-    # PyInstaller 运行时 __file__ 可能不存在
-    project_root = Path(sys.argv[1]).resolve().parent.parent if len(sys.argv) > 1 else Path.cwd()
+# 获取项目根目录 - 使用绝对路径
+# PyInstaller 从 backend 目录运行，spec 文件在 packaging/
+# 所以需要从 packaging 向上两级到项目根，然后进入 backend
+spec_dir = Path(__file__).resolve().parent
+project_root = spec_dir.parent
+backend_dir = project_root / 'backend'
+
+# 验证路径
+if not backend_dir.exists():
+    # Fallback: 尝试当前工作目录的父目录
+    project_root = Path.cwd().parent
+    backend_dir = Path.cwd()
 
 block_cipher = None
 
 a = Analysis(
-    [str(project_root / 'backend' / 'main.py')],
-    pathex=[str(project_root / 'backend')],
+    [str(backend_dir / 'main.py')],
+    pathex=[str(backend_dir)],
     binaries=[],
     datas=[
         (str(project_root / 'frontend' / 'dist'), 'frontend/dist'),
