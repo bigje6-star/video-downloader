@@ -47,7 +47,7 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-        pyinstaller packaging/VideoDownloader.spec --clean --noconfirm
+        pyinstaller ../packaging/VideoDownloader.spec --clean --noconfirm
 
         ls -lah dist/
 
