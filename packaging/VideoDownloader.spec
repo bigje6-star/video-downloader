@@ -6,8 +6,18 @@ PyInstaller 配置文件 - 视频下载器跨平台打包
 import sys
 import os
 from pathlib import Path
-from PyInstaller.building.api import Analysis, PYZ, EXE
-from PyInstaller.building.datastruct import TOC
+
+# PyInstaller 6.x 兼容性导入
+try:
+    # PyInstaller 6.x
+    from PyInstaller.building.api import Analysis
+    from PyInstaller.building.pyz import PYZ
+    from PyInstaller.building.api import EXE
+    from PyInstaller.building.datastruct import TOC
+except ImportError:
+    # PyInstaller 5.x 及更早版本
+    from PyInstaller.building.api import Analysis, PYZ, EXE
+    from PyInstaller.building.datastruct import TOC
 
 # 使用环境变量或当前工作目录作为基准（GitHub Actions 中使用）
 # 在 GitHub Actions 中，工作目录是项目根目录
