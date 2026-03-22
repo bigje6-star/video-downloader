@@ -77,9 +77,10 @@ jobs:
           $version = "${{ env.VERSION }}" -replace '^v', ''
           if ($version -eq "") { $version = "1.0.0" }
 
-          cd installer\windows
+          $outputDir = "$(Resolve-Path .)\output\windows"
+          $distDir = "$(Resolve-Path .)\installer\windows"
 
-          # Create ISS file if not exists
+          # Create ISS file
           $issContent = @"
           [Setup]
           AppName=${{ env.APP_NAME }}
@@ -87,9 +88,8 @@ jobs:
           AppPublisher=Video Downloader
           DefaultDirName={pf}\${{ env.APP_NAME }}
           DefaultGroupName=${{ env.APP_NAME }}
-          OutputDir=..\..\output\windows
+          OutputDir=$outputDir
           OutputBaseFilename=${{ env.APP_NAME }}-Setup-$version-win64
-          SetupIconFile=..\..\packaging\icon.ico
           UninstallDisplayIcon={app}\${{ env.APP_NAME }}.exe
           Compression=lzma2
           SolidCompression=yes
@@ -102,7 +102,7 @@ jobs:
           Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
           [Files]
-          Source: "..\..\output\windows\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
+          Source: "$distDir\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 
           [Icons]
           Name: "{group}\${{ env.APP_NAME }}"; Filename: "{app}\${{ env.APP_NAME }}.exe"
@@ -113,9 +113,9 @@ jobs:
           Filename: "{app}\${{ env.APP_NAME }}.exe"; Description: "{cm:LaunchProgram,${{ env.APP_NAME }}}"; Flags: nowait postinstall skipifsilent
           "@
 
-          Set-Content -Path "VideoDownloader.iss" -Value $issContent -Encoding UTF8
+          Set-Content -Path "installer\windows\VideoDownloader.iss" -Value $issContent -Encoding UTF8
 
-          iscc VideoDownloader.iss
+          iscc "installer\windows\VideoDownloader.iss"
 
       - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
@@ -227,7 +227,7 @@ jobs:
       - name: Create DMG
         run: |
           version="${{ env.VERSION }}"
-          version="${version#v}"  # Remove 'v' prefix if present
+          version="${version#v}"
           if [ -z "$version" ]; then version="1.0.0"; fi
 
           mkdir -p output/dmg
@@ -239,21 +239,8 @@ jobs:
             --app-drop-link 450 200 \
             --icon "${{ env.APP_NAME }}.app" 150 200 \
             --hide-extension "${{ env.APP_NAME }}.app" \
-            --background packaging/dmg-background.png \
             output/dmg/${{ env.APP_NAME }}-${version}-macos-universal.dmg \
-            output/macos/${{ env.APP_NAME }}.app || {
-              # Fallback without background image
-              create-dmg \
-                --volname "${{ env.APP_NAME }}" \
-                --window-pos 200 120 \
-                --window-size 600 400 \
-                --icon-size 100 \
-                --app-drop-link 450 200 \
-                --icon "${{ env.APP_NAME }}.app" 150 200 \
-                --hide-extension "${{ env.APP_NAME }}.app" \
-                output/dmg/${{ env.APP_NAME }}-${version}-macos-universal.dmg \
-                output/macos/${{ env.APP_NAME }}.app
-            }
+            output/macos/${{ env.APP_NAME }}.app
 
       - name: Notarize DMG (optional)
         if: ${{ env.MACOS_CERTIFICATE != '' }}
