@@ -7,10 +7,16 @@ import sys
 import os
 from pathlib import Path
 
-# 使用脚本所在目录作为基准
-spec_dir = Path(__file__).parent
-backend_dir = spec_dir.parent / 'backend'
-project_root = spec_dir.parent
+# 使用环境变量或当前工作目录作为基准（GitHub Actions 中使用）
+# 在 GitHub Actions 中，工作目录是项目根目录
+if os.environ.get('GITHUB_WORKSPACE'):
+    project_root = Path(os.environ['GITHUB_WORKSPACE'])
+else:
+    # 本地开发环境，使用脚本所在目录
+    spec_dir = Path(__file__).parent
+    project_root = spec_dir.parent
+
+backend_dir = project_root / 'backend'
 
 block_cipher = None
 
