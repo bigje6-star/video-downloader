@@ -5,16 +5,40 @@ import os
 import json
 import asyncio
 import uuid
+import subprocess
+import platform
 from datetime import datetime
 from typing import Optional, Callable, List
 from yt_dlp import YoutubeDL
 
+
+def get_browser_cookie_args():
+    """获取浏览器 Cookie 参数"""
+    # 支持的浏览器列表
+    browsers = {
+        'darwin': ['chrome', 'safari', 'firefox', 'brave', 'edge'],
+        'windows': ['chrome', 'firefox', 'edge', 'brave', 'opera'],
+        'linux': ['chrome', 'firefox', 'brave', 'opera'],
+    }
+
+    system = platform.system().lower()
+    if system == 'darwin':
+        system = 'darwin'
+    elif system == 'windows':
+        system = 'windows'
+    else:
+        system = 'linux'
+
+    return browsers.get(system, ['chrome'])
+
+
 class Downloader:
-    def __init__(self, download_dir: str, progress_callback: Optional[Callable] = None):
+    def __init__(self, download_dir: str, progress_callback: Optional[Callable] = None, cookies_from_browser: str = None):
         self.download_dir = download_dir
         self.progress_callback = progress_callback
         self.active_tasks = {}
         self.batch_tasks = {}
+        self.cookies_from_browser = cookies_from_browser
 
     def parse_url(self, url: str) -> dict:
         """解析URL，获取视频信息或播放列表信息"""
@@ -43,9 +67,11 @@ class Downloader:
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
-            'extract_flat': 'in_playlist',  # 不下载详细元数据，只获取基本信息
+            'extract_flat': False,  # 获取详细信息包括缩略图
             'ignoreerrors': True,
         }
+        if self.cookies_from_browser:
+            ydl_opts['cookiesfrombrowser'] = self.cookies_from_browser
 
         with YoutubeDL(ydl_opts) as ydl:
             try:
@@ -55,8 +81,10 @@ class Downloader:
                 if 'entries' not in info:
                     return {"error": "不是播放列表 URL"}
 
+                # 确保 entries 存在且是列表
+                entries = info.get('entries') or []
                 videos = []
-                for idx, entry in enumerate(info.get('entries', [])):
+                for idx, entry in enumerate(entries):
                     if entry is None:
                         continue
                     # 构建视频 URL
@@ -66,12 +94,12 @@ class Downloader:
 
                     videos.append({
                         'id': entry.get('id', ''),
-                        'title': entry.get('title', 'Unknown'),
+                        'title': entry.get('title', 'Unknown') or 'Unknown',
                         'url': video_url,
-                        'duration': entry.get('duration', 0),
-                        'thumbnail': entry.get('thumbnail', ''),
-                        'uploader': entry.get('uploader', ''),
-                        'uploader_id': entry.get('uploader_id', ''),
+                        'duration': entry.get('duration') or 0,
+                        'thumbnail': entry.get('thumbnail') or '',
+                        'uploader': entry.get('uploader') or '',
+                        'uploader_id': entry.get('uploader_id') or '',
                         'index': idx + 1,
                         'selected': True,  # 默认选中
                     })
@@ -182,6 +210,8 @@ class Downloader:
                     'preferredquality': '192',
                 }],
             }
+            if self.cookies_from_browser:
+                ydl_opts['cookiesfrombrowser'] = self.cookies_from_browser
         else:
             output_path = os.path.join(self.download_dir, filename_template)
 
@@ -197,8 +227,17 @@ class Downloader:
                 # 仅音频模式（备用）
                 fmt = 'bestaudio/best'
             elif fmt.isdigit():
-                # 用户选择了具体格式ID，添加音频
+                # 用户选择了具体格式 ID，添加音频
                 fmt = f'{fmt}+bestaudio'
+            elif fmt == 'mp4':
+                # MP4 格式，确保有音频
+                fmt = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best'
+            elif fmt == 'webm':
+                # WebM 格式，确保有音频
+                fmt = 'bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo[ext=webm]+bestaudio/best[ext=webm]/best'
+            else:
+                # 其他格式，尝试确保有音频
+                fmt = f'{fmt}+bestaudio/best'
 
             ydl_opts = {
                 'format': fmt,
@@ -208,6 +247,8 @@ class Downloader:
                 # 合并音视频
                 'merge_output_format': 'mp4',
             }
+            if self.cookies_from_browser:
+                ydl_opts['cookiesfrombrowser'] = self.cookies_from_browser
 
         self.active_tasks[task_id] = True
 

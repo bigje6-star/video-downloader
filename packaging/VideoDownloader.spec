@@ -6,6 +6,8 @@ PyInstaller 配置文件 - 视频下载器跨平台打包
 import sys
 import os
 from pathlib import Path
+from PyInstaller.building.api import Analysis, PYZ, EXE
+from PyInstaller.building.datastruct import TOC
 
 # 使用环境变量或当前工作目录作为基准（GitHub Actions 中使用）
 # 在 GitHub Actions 中，工作目录是项目根目录
@@ -32,16 +34,6 @@ a = Analysis(
     pathex=[str(backend_dir)],
     binaries=[],
     datas=[datas_path],
-
-block_cipher = None
-
-a = Analysis(
-    [str(backend_dir / 'main.py')],
-    pathex=[str(backend_dir)],
-    binaries=[],
-    datas=[
-        (str(project_root / 'frontend' / 'dist'), 'frontend/dist'),
-    ],
     hiddenimports=[
         'uvicorn',
         'uvicorn.logging',

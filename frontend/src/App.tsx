@@ -172,11 +172,16 @@ function App() {
   const [tempDownloadDir, setTempDownloadDir] = useState("");
   const [selectedVideos, setSelectedVideos] = useState<Set<number>>(new Set());
   const [concurrency, setConcurrency] = useState(1);
+  const [cookiesFromBrowser, setCookiesFromBrowser] = useState<string>("");
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     axios.get("/api/settings").then((res) => {
       setDownloadDir(res.data.download_dir);
+      setCookiesFromBrowser(res.data.cookies_from_browser || "");
+      if (res.data.concurrency !== undefined) {
+        setConcurrency(res.data.concurrency);
+      }
     });
 
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -231,7 +236,7 @@ function App() {
     setVideoInfo(null);
     setSelectedVideos(new Set());
     try {
-      const res = await axios.post("/api/parse", { url });
+      const res = await axios.post("/api/parse", { url, cookies_from_browser: cookiesFromBrowser || undefined });
       setVideoInfo(res.data);
 
       if (res.data.is_playlist && res.data.videos) {
@@ -259,6 +264,7 @@ function App() {
         url,
         format_id: selectedFormat,
         audio_format: audioFormat || null,
+        cookies_from_browser: cookiesFromBrowser || undefined,
       });
       setUrl("");
       setVideoInfo(null);
@@ -277,6 +283,7 @@ function App() {
         format_id: selectedFormat,
         audio_format: audioFormat || null,
         concurrency: concurrency,
+        cookies_from_browser: cookiesFromBrowser || undefined,
       });
       setUrl("");
       setVideoInfo(null);
@@ -329,6 +336,16 @@ function App() {
     setShowSettings(true);
   };
 
+  const availableBrowsers = [
+    { value: '', label: '不使用 Cookie (默认)' },
+    { value: 'chrome', label: 'Google Chrome' },
+    { value: 'firefox', label: 'Mozilla Firefox' },
+    { value: 'edge', label: 'Microsoft Edge' },
+    { value: 'brave', label: 'Brave' },
+    { value: 'safari', label: 'Safari (macOS)' },
+    { value: 'opera', label: 'Opera' },
+  ];
+
   const selectDirectory = async () => {
     try {
       const res = await axios.post("/api/settings/select-dir");
@@ -345,8 +362,14 @@ function App() {
     try {
       const res = await axios.post("/api/settings", {
         download_dir: tempDownloadDir,
+        cookies_from_browser: cookiesFromBrowser || null,
+        concurrency: concurrency,
       });
       setDownloadDir(res.data.download_dir);
+      setCookiesFromBrowser(res.data.cookies_from_browser || "");
+      if (res.data.concurrency !== undefined) {
+        setConcurrency(res.data.concurrency);
+      }
       setShowSettings(false);
     } catch (err) {
       console.error(err);
@@ -459,7 +482,13 @@ function App() {
                       >
                         <optgroup label="视频">
                           <option value="best">最佳质量 (带音频)</option>
-                          <option value="bestvideo+bestaudio">最佳视频+音频</option>
+                          <option value="bestvideo+bestaudio">最佳视频 + 音频 (合并)</option>
+                          <option value="137+140">1080p MP4 (带音频)</option>
+                          <option value="136+140">720p MP4 (带音频)</option>
+                          <option value="135+140">480p MP4 (带音频)</option>
+                          <option value="134+140">360p MP4 (带音频)</option>
+                          <option value="mp4">MP4 格式 (自动选择)</option>
+                          <option value="webm">WebM 格式 (自动选择)</option>
                         </optgroup>
                         <optgroup label="音频">
                           <option value="audio_only">仅提取音频</option>
@@ -483,19 +512,6 @@ function App() {
                         </select>
                       </div>
                     )}
-
-                    <div className="format-select">
-                      <label>并发数量</label>
-                      <select
-                        value={concurrency}
-                        onChange={(e) => setConcurrency(Number(e.target.value))}
-                      >
-                        <option value={1}>1 (推荐)</option>
-                        <option value={2}>2</option>
-                        <option value={3}>3</option>
-                        <option value={5}>5</option>
-                      </select>
-                    </div>
 
                     <button
                       className="btn btn-success btn-large"
@@ -782,6 +798,35 @@ function App() {
                   浏览
                 </button>
               </div>
+            </div>
+            <div className="setting-item">
+              <label>浏览器 Cookie (用于访问私有视频)</label>
+              <select
+                value={cookiesFromBrowser}
+                onChange={(e) => setCookiesFromBrowser(e.target.value)}
+                className="setting-select"
+              >
+                {availableBrowsers.map((browser) => (
+                  <option key={browser.value} value={browser.value}>
+                    {browser.label}
+                  </option>
+                ))}
+              </select>
+              <p className="setting-hint">选择已登录 YouTube 账号的浏览器，用于访问会员视频或私有视频</p>
+            </div>
+            <div className="setting-item">
+              <label>并发下载数量</label>
+              <select
+                value={concurrency}
+                onChange={(e) => setConcurrency(Number(e.target.value))}
+                className="setting-select"
+              >
+                <option value={1}>1 (推荐，最稳定)</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+                <option value={5}>5 (最快，但可能触发限制)</option>
+              </select>
+              <p className="setting-hint">同时下载的视频数量，较少的并发更稳定</p>
             </div>
             <div className="modal-actions">
               <button className="btn" onClick={() => setShowSettings(false)}>

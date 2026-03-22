@@ -13,6 +13,7 @@ permissions:
 env:
   APP_NAME: VideoDownloader
   VERSION: ${{ github.ref_name }}
+  APPIMAGEDIR: /tmp/AppDir
 
 jobs:
   build:
@@ -267,7 +268,7 @@ jobs:
           cd backend
           pyinstaller ../packaging/VideoDownloader.spec --clean --noconfirm
 
-      - name: Package Linux distribution
+      - name: Package Linux distribution (tar.gz)
         if: runner.os == 'Linux'
         run: |
           version="${{ env.VERSION }}"
@@ -288,6 +289,96 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: output/*.tar.gz
+          retention-days: 30
+
+      # =======================================================================
+      # Linux AppImage Build
+      # =======================================================================
+      - name: Install linuxdeploy
+        if: runner.os == 'Linux'
+        run: |
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+          sudo mv linuxdeploy-x86_64.AppImage /usr/local/bin/linuxdeploy
+          sudo apt-get install -y librsvg2-bin
+
+      - name: Prepare AppDir
+        if: runner.os == 'Linux'
+        run: |
+          version="${{ env.VERSION }}"
+          version="${version#v}"
+          [ -z "$version" ] && version="1.0.0"
+
+          mkdir -p ${{ env.APPIMAGEDIR }}/usr/bin
+          mkdir -p ${{ env.APPIMAGEDIR }}/usr/lib
+          mkdir -p ${{ env.APPIMAGEDIR }}/usr/share/applications
+          mkdir -p ${{ env.APPIMAGEDIR }}/usr/share/icons/hicolor/256x256/apps
+
+          # 复制主程序
+          cp backend/dist/${{ env.APP_NAME }} ${{ env.APPIMAGEDIR }}/usr/bin/
+          cp $(which ffmpeg) ${{ env.APPIMAGEDIR }}/usr/lib/
+          cp $(which ffprobe) ${{ env.APPIMAGEDIR }}/usr/lib/
+
+          # 创建启动脚本
+          cat > ${{ env.APPIMAGEDIR }}/AppRun << 'EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "$0")")"
+          export PATH="$HERE/usr/bin:$HERE/usr/lib:$PATH"
+          export LD_LIBRARY_PATH="$HERE/usr/lib:$LD_LIBRARY_PATH"
+          exec "$HERE/usr/bin/${{ env.APP_NAME }}" "$@"
+          EOF
+          chmod +x ${{ env.APPIMAGEDIR }}/AppRun
+
+          # 创建 desktop 文件
+          cat > ${{ env.APPIMAGEDIR }}/usr/share/applications/${{ env.APP_NAME }}.desktop << EOF
+          [Desktop Entry]
+          Name=${{ env.APP_NAME }}
+          Comment=Video Downloader based on yt-dlp
+          Exec=${{ env.APP_NAME }}
+          Icon=${{ env.APP_NAME }}
+          Type=Application
+          Categories=Utility;Network;
+          EOF
+
+          # 创建简易图标（粉色背景 + 白色播放按钮）
+          cat > /tmp/icon.svg << 'SVG'
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+            <rect fill="#e91e63" width="256" height="256" rx="40"/>
+            <path fill="#ffffff" d="M100 70l100 66-100 66V70z"/>
+          </svg>
+          SVG
+          # 转换为 PNG (需要安装 librsvg)
+          rsvg-convert -w 256 -h 256 /tmp/icon.svg -o ${{ env.APPIMAGEDIR }}/usr/share/icons/hicolor/256x256/apps/${{ env.APP_NAME }}.png
+          cp ${{ env.APPIMAGEDIR }}/usr/share/icons/hicolor/256x256/apps/${{ env.APP_NAME }}.png ${{ env.APPIMAGEDIR }}/${{ env.APP_NAME }}.png
+
+      - name: Build AppImage
+        if: runner.os == 'Linux'
+        run: |
+          version="${{ env.VERSION }}"
+          version="${version#v}"
+          [ -z "$version" ] && version="1.0.0"
+
+          mkdir -p output/appimage
+
+          # 安装 librsvg 用于 SVG 转 PNG
+          sudo apt-get install -y librsvg2-bin
+
+          # 重新生成图标
+          rsvg-convert -w 256 -h 256 /tmp/icon.svg -o ${{ env.APPIMAGEDIR }}/usr/share/icons/hicolor/256x256/apps/${{ env.APP_NAME }}.png
+          cp ${{ env.APPIMAGEDIR }}/usr/share/icons/hicolor/256x256/apps/${{ env.APP_NAME }}.png ${{ env.APPIMAGEDIR }}/${{ env.APP_NAME }}.png
+
+          # 构建 AppImage
+          linuxdeploy --appdir ${{ env.APPIMAGEDIR }} --output appimage --icon-filename ${{ env.APP_NAME }}
+
+          # 重命名为带版本号的名称
+          mv *.AppImage output/appimage/${{ env.APP_NAME }}-${version}-linux-x86_64.AppImage
+
+      - name: Upload AppImage
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: output/appimage/*.AppImage
           retention-days: 30
 
   # ===========================================================================
@@ -311,10 +402,16 @@ jobs:
           name: macos-installer
           path: ./artifacts
 
-      - name: Download Linux archive
+      - name: Download Linux tar.gz
         uses: actions/download-artifact@v4
         with:
           name: linux-installer
+          path: ./artifacts
+
+      - name: Download Linux AppImage
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-appimage
           path: ./artifacts
 
       - name: List artifacts
@@ -326,7 +423,9 @@ jobs:
           files: |
             ./artifacts/*.exe
             ./artifacts/*.dmg
+            ./artifacts/*.zip
             ./artifacts/*.tar.gz
+            ./artifacts/*.AppImage
           generate_release_notes: true
           draft: false
           prerelease: false

@@ -121,6 +121,8 @@ async def read_root():
 # 挂载 manager 到 app state
 app.state.manager = manager
 app.state.download_dir = DOWNLOAD_DIR
+app.state.concurrency = 1
+app.state.cookies_from_browser = None
 
 if __name__ == "__main__":
     import uvicorn

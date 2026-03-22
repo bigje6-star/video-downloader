@@ -21,12 +21,14 @@ batch_downloaders = {}
 
 class ParseRequest(BaseModel):
     url: str
+    cookies_from_browser: Optional[str] = None
 
 class DownloadRequest(BaseModel):
     url: str
     format_id: str = 'best'
     filename_template: str = '%(title)s.%(ext)s'
     audio_format: Optional[str] = None
+    cookies_from_browser: Optional[str] = None
 
 class TaskControl(BaseModel):
     task_id: str
@@ -38,6 +40,7 @@ class BatchDownloadRequest(BaseModel):
     filename_template: str = '%(title)s.%(ext)s'
     audio_format: Optional[str] = None
     concurrency: int = 1
+    cookies_from_browser: Optional[str] = None
 
 @router.post("/parse")
 async def parse_url(req: ParseRequest, request: Request):
@@ -52,7 +55,7 @@ async def start_download(req: DownloadRequest, request: Request):
     """开始下载"""
     task_id = str(uuid.uuid4())
     download_dir = request.app.state.download_dir
-    manager = request.app.state.manager
+    cookies = req.cookies_from_browser or getattr(request.app.state, 'cookies_from_browser', None)
     
     def progress_callback(task_id: str, progress: dict):
         # 直接更新任务状态
@@ -60,7 +63,7 @@ async def start_download(req: DownloadRequest, request: Request):
             download_tasks[task_id]['progress'] = progress
             download_tasks[task_id]['status'] = progress.get('status', 'downloading')
     
-    downloader = Downloader(download_dir, progress_callback)
+    downloader = Downloader(download_dir, progress_callback, cookies_from_browser=cookies)
     task_downloaders[task_id] = downloader
     
     # 创建任务记录
@@ -108,12 +111,16 @@ async def delete_task(task_id: str):
 
 class SettingsRequest(BaseModel):
     download_dir: str
+    cookies_from_browser: Optional[str] = None
+    concurrency: int = 1
 
 @router.get("/settings")
 async def get_settings(request: Request):
     """获取设置"""
     return {
         'download_dir': request.app.state.download_dir,
+        'cookies_from_browser': getattr(request.app.state, 'cookies_from_browser', None),
+        'concurrency': getattr(request.app.state, 'concurrency', 1),
     }
 
 @router.get("/settings/dirs")
@@ -212,7 +219,20 @@ async def update_settings(req: SettingsRequest, request: Request):
     download_dir = os.path.expanduser(req.download_dir)
     os.makedirs(download_dir, exist_ok=True)
     request.app.state.download_dir = download_dir
-    return {'status': 'updated', 'download_dir': download_dir}
+
+    # 更新 Cookie 设置
+    if req.cookies_from_browser is not None:
+        request.app.state.cookies_from_browser = req.cookies_from_browser
+
+    # 更新并发设置
+    request.app.state.concurrency = req.concurrency
+
+    return {
+        'status': 'updated',
+        'download_dir': download_dir,
+        'cookies_from_browser': req.cookies_from_browser,
+        'concurrency': req.concurrency,
+    }
 
 # ========== 批量下载任务 API ==========
 
@@ -261,7 +281,7 @@ async def start_batch_download(req: BatchDownloadRequest, request: Request):
                     break
         progress_callback(task_id, progress)
 
-    downloader = Downloader(download_dir, wrapped_progress_callback)
+    downloader = Downloader(download_dir, wrapped_progress_callback, cookies_from_browser=cookies)
     batch_downloaders[batch_id] = downloader
 
     # 创建批量任务记录
